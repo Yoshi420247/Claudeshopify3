@@ -828,75 +828,43 @@
         updateLoadingProgress(0, 1);
 
         try {
-            let allProducts = [];
-            let sinceId = 0;
-            let hasMore = true;
-            let pageCount = 0;
-
-            // Use since_id pagination (CORS proxy strips Link headers)
-            while (hasMore) {
-                pageCount++;
-                const url = `${CORS_PROXY}${getShopifyBaseUrl()}/admin/api/2024-01/products.json?limit=250&since_id=${sinceId}`;
-
-                const res = await fetchWithRetry(url, {
-                    headers: { 'X-Shopify-Access-Token': settings.shopifyToken }
-                }, { service: 'shopify' });
-
-                if (!res.ok) throw new Error(`Shopify API error: ${res.status}`);
-
-                const data = await res.json();
-
-                if (data.products && data.products.length > 0) {
-                    allProducts = allProducts.concat(data.products);
-                    // Get the highest ID for the next page
-                    sinceId = Math.max(...data.products.map(p => p.id));
-                    updateLoadingProgress(allProducts.length, allProducts.length + 250, `Loading products... (${allProducts.length} found)`);
-
-                    // If we got less than 250, we're done
-                    if (data.products.length < 250) {
-                        hasMore = false;
-                    }
-                } else {
-                    hasMore = false;
-                }
-
-                // Safety limit to prevent infinite loops
-                if (pageCount > 50) {
-                    console.warn('Hit pagination safety limit');
-                    hasMore = false;
-                }
-            }
+            // Use GraphQL to fetch products WITH costs in efficient batched queries
+            const allProducts = await loadProductsWithGraphQL(settings);
 
             // Process products
             state.products = allProducts.map(p => ({
-                id: p.id,
+                id: extractNumericId(p.id),
                 title: p.title,
                 vendor: p.vendor,
-                productType: p.product_type,
+                productType: p.productType,
                 handle: p.handle,
-                variants: p.variants.map(v => ({
-                    id: v.id,
-                    title: v.title,
-                    sku: v.sku,
-                    price: parseFloat(v.price),
-                    compareAtPrice: v.compare_at_price ? parseFloat(v.compare_at_price) : null,
-                    cost: null, // Will need inventory item lookup for cost
-                    inventoryItemId: v.inventory_item_id
-                })),
-                image: p.image?.src || null,
-                tags: p.tags,
+                variants: p.variants.edges.map(ve => {
+                    const v = ve.node;
+                    const cost = v.inventoryItem?.unitCost?.amount;
+                    return {
+                        id: extractNumericId(v.id),
+                        title: v.title,
+                        sku: v.sku,
+                        price: parseFloat(v.price),
+                        compareAtPrice: v.compareAtPrice ? parseFloat(v.compareAtPrice) : null,
+                        cost: cost ? parseFloat(cost) : null,
+                        inventoryItemId: v.inventoryItem ? extractNumericId(v.inventoryItem.id) : null
+                    };
+                }),
+                image: p.featuredImage?.url || null,
+                tags: p.tags.join(', '),
                 status: p.status
             }));
 
-            // Try to get costs from inventory
-            updateLoadingProgress(0, state.products.length, 'Loading inventory costs...');
-            await loadInventoryCosts();
+            // Count products with costs
+            const withCosts = state.products.filter(p => p.variants.some(v => v.cost !== null)).length;
+            console.log(`Loaded ${state.products.length} products, ${withCosts} have cost data`);
 
             localStorage.setItem('oilslick_products', JSON.stringify(state.products));
 
             hideLoadingOverlay();
-            showToast(`Loaded ${state.products.length} products`, 'success');
-            logActivity(`Loaded ${state.products.length} products from Shopify`);
+            showToast(`Loaded ${state.products.length} products (${withCosts} with costs)`, 'success');
+            logActivity(`Loaded ${state.products.length} products from Shopify via GraphQL`);
 
             populateFilters();
             renderProducts();
@@ -909,21 +877,144 @@
         }
     }
 
+    // Extract numeric ID from Shopify GraphQL GID format
+    function extractNumericId(gid) {
+        if (!gid) return null;
+        const match = gid.match(/\/(\d+)$/);
+        return match ? parseInt(match[1]) : gid;
+    }
+
+    // GraphQL query to fetch products with variants and costs
+    async function loadProductsWithGraphQL(settings) {
+        const allProducts = [];
+        let cursor = null;
+        let hasNextPage = true;
+        let pageCount = 0;
+
+        const query = `
+            query getProductsWithCost($cursor: String) {
+                products(first: 50, after: $cursor) {
+                    pageInfo {
+                        hasNextPage
+                        endCursor
+                    }
+                    edges {
+                        node {
+                            id
+                            title
+                            vendor
+                            productType
+                            handle
+                            status
+                            tags
+                            featuredImage {
+                                url
+                            }
+                            variants(first: 100) {
+                                edges {
+                                    node {
+                                        id
+                                        title
+                                        sku
+                                        price
+                                        compareAtPrice
+                                        inventoryItem {
+                                            id
+                                            unitCost {
+                                                amount
+                                                currencyCode
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        `;
+
+        while (hasNextPage) {
+            pageCount++;
+            updateLoadingProgress(allProducts.length, allProducts.length + 50, `Loading products... (${allProducts.length} found)`);
+
+            const res = await fetchWithRetry(
+                `${CORS_PROXY}${getShopifyBaseUrl()}/admin/api/2024-01/graphql.json`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'X-Shopify-Access-Token': settings.shopifyToken,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        query: query,
+                        variables: { cursor }
+                    })
+                },
+                { service: 'shopify' }
+            );
+
+            if (!res.ok) {
+                const errorText = await res.text();
+                throw new Error(`Shopify GraphQL error: ${res.status} - ${errorText}`);
+            }
+
+            const data = await res.json();
+
+            if (data.errors) {
+                console.error('GraphQL errors:', data.errors);
+                throw new Error(data.errors[0]?.message || 'GraphQL query failed');
+            }
+
+            const products = data.data?.products;
+            if (products?.edges) {
+                allProducts.push(...products.edges.map(e => e.node));
+                hasNextPage = products.pageInfo.hasNextPage;
+                cursor = products.pageInfo.endCursor;
+            } else {
+                hasNextPage = false;
+            }
+
+            // Safety limit
+            if (pageCount > 100) {
+                console.warn('Hit GraphQL pagination safety limit');
+                hasNextPage = false;
+            }
+        }
+
+        return allProducts;
+    }
+
+    // Keep REST fallback for individual inventory cost updates if needed
     async function loadInventoryCosts() {
+        // This function is now deprecated - costs are loaded via GraphQL
+        // Keeping for backwards compatibility if someone has old cached data
         const settings = getSettings();
+        let loaded = 0;
+        const total = state.products.reduce((acc, p) => acc + p.variants.filter(v => !v.cost && v.inventoryItemId).length, 0);
+
+        if (total === 0) {
+            console.log('All variants already have cost data from GraphQL');
+            return;
+        }
+
+        console.log(`Loading ${total} missing costs via REST API fallback...`);
 
         for (const product of state.products) {
             for (const variant of product.variants) {
-                if (variant.inventoryItemId) {
+                if (!variant.cost && variant.inventoryItemId) {
                     try {
-                        const res = await fetch(
+                        const res = await fetchWithRetry(
                             `${CORS_PROXY}${getShopifyBaseUrl()}/admin/api/2024-01/inventory_items/${variant.inventoryItemId}.json`,
-                            { headers: { 'X-Shopify-Access-Token': settings.shopifyToken } }
+                            { headers: { 'X-Shopify-Access-Token': settings.shopifyToken } },
+                            { service: 'shopify' }
                         );
                         if (res.ok) {
                             const data = await res.json();
                             variant.cost = data.inventory_item.cost ? parseFloat(data.inventory_item.cost) : null;
                         }
+                        loaded++;
+                        updateLoadingProgress(loaded, total, `Loading costs... (${loaded}/${total})`);
                     } catch (e) {
                         console.warn('Could not load cost for variant', variant.id);
                     }
