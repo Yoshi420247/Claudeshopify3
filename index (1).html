@@ -201,6 +201,48 @@
                     </button>
                 </div>
 
+                <!-- Selection Controls -->
+                <div class="bg-gray-800/50 border border-gray-700 rounded-lg px-4 py-3 mb-4 flex flex-wrap items-center gap-4">
+                    <span class="text-sm text-gray-400 font-medium">Quick Select:</span>
+
+                    <!-- Select First N -->
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs text-gray-500">First</span>
+                        <input type="number" id="select-qty" min="1" max="1000" value="50"
+                            class="w-20 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm text-center">
+                        <button onclick="selectFirstN()" class="bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-sm">
+                            Select
+                        </button>
+                    </div>
+
+                    <span class="text-gray-600">|</span>
+
+                    <!-- Select Range -->
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs text-gray-500">Range</span>
+                        <input type="number" id="select-from" min="1" placeholder="1"
+                            class="w-16 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm text-center">
+                        <span class="text-gray-500">to</span>
+                        <input type="number" id="select-to" min="1" placeholder="100"
+                            class="w-16 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm text-center">
+                        <button onclick="selectRange()" class="bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-sm">
+                            Select
+                        </button>
+                    </div>
+
+                    <span class="text-gray-600">|</span>
+
+                    <!-- Select All / Deselect -->
+                    <div class="flex items-center gap-2">
+                        <button onclick="selectAllFiltered()" class="bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-sm">
+                            Select All (<span id="filtered-total">0</span>)
+                        </button>
+                        <button onclick="deselectAll()" class="text-gray-400 hover:text-white px-3 py-1 rounded text-sm">
+                            Deselect All
+                        </button>
+                    </div>
+                </div>
+
                 <!-- Product Table -->
                 <div class="flex-1 overflow-auto">
                     <table class="w-full text-sm">
@@ -263,6 +305,12 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/>
                             </svg>
                             Analyze Selected
+                        </button>
+                        <button onclick="reanalyzeSelected()" class="bg-yellow-600 hover:bg-yellow-700 px-4 py-2 rounded text-sm flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                            </svg>
+                            Re-analyze Selected
                         </button>
                         <button id="accept-all-btn" onclick="acceptAllSelected()" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded text-sm flex items-center gap-2 disabled:opacity-50" disabled>
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2020,6 +2068,7 @@ Remember: You're a pricing expert with 15 years of experience. Use your judgment
         document.getElementById('prev-page').disabled = state.currentPage <= 1;
         document.getElementById('next-page').disabled = state.currentPage >= totalPages;
         document.getElementById('showing-count').textContent = state.filteredProducts.length;
+        document.getElementById('filtered-total').textContent = state.filteredProducts.length;
 
         // Bind checkboxes
         document.querySelectorAll('.product-checkbox').forEach(cb => {
@@ -2201,6 +2250,87 @@ Remember: You're a pricing expert with 15 years of experience. Use your judgment
         state.selectedProducts.clear();
         updateBulkActionBar();
         renderProducts();
+    }
+
+    /**
+     * Select first N products from the current filtered list
+     */
+    function selectFirstN() {
+        const qty = parseInt(document.getElementById('select-qty').value) || 50;
+        const toSelect = state.filteredProducts.slice(0, qty);
+
+        state.selectedProducts.clear();
+        toSelect.forEach(p => state.selectedProducts.add(p.id));
+
+        updateBulkActionBar();
+        renderProducts();
+        showToast(`Selected ${toSelect.length} products`, 'success');
+    }
+
+    /**
+     * Select products in a specific range (1-indexed for user friendliness)
+     */
+    function selectRange() {
+        const from = parseInt(document.getElementById('select-from').value) || 1;
+        const to = parseInt(document.getElementById('select-to').value) || state.filteredProducts.length;
+
+        // Convert to 0-indexed
+        const startIdx = Math.max(0, from - 1);
+        const endIdx = Math.min(state.filteredProducts.length, to);
+
+        if (startIdx >= endIdx) {
+            showToast('Invalid range', 'error');
+            return;
+        }
+
+        const toSelect = state.filteredProducts.slice(startIdx, endIdx);
+
+        state.selectedProducts.clear();
+        toSelect.forEach(p => state.selectedProducts.add(p.id));
+
+        updateBulkActionBar();
+        renderProducts();
+        showToast(`Selected products ${from} to ${to} (${toSelect.length} total)`, 'success');
+    }
+
+    /**
+     * Select all products in the current filtered view
+     */
+    function selectAllFiltered() {
+        state.selectedProducts.clear();
+        state.filteredProducts.forEach(p => state.selectedProducts.add(p.id));
+        updateBulkActionBar();
+        renderProducts();
+        showToast(`Selected all ${state.filteredProducts.length} products`, 'success');
+    }
+
+    /**
+     * Re-analyze selected products (clears existing analysis first)
+     */
+    async function reanalyzeSelected() {
+        const selectedIds = [...state.selectedProducts];
+        if (selectedIds.length === 0) {
+            showToast('No products selected', 'error');
+            return;
+        }
+
+        // Confirm if many products have existing analyses
+        const hasExisting = selectedIds.filter(id => state.analysisCache[id]?.suggestedPrice).length;
+        if (hasExisting > 0) {
+            if (!confirm(`This will clear and re-run analysis for ${hasExisting} products that already have suggestions. Continue?`)) {
+                return;
+            }
+        }
+
+        // Clear existing analyses for selected products
+        selectedIds.forEach(id => {
+            delete state.analysisCache[id];
+        });
+        saveAnalysisCache();
+        renderProducts();
+
+        // Now run analysis
+        await analyzeSelected();
     }
 
     // ============================================================================
