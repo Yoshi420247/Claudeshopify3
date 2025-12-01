@@ -485,12 +485,15 @@
                         </div>
                     </div>
 
-                    <div class="mt-6 flex gap-3">
+                    <div class="mt-6 flex flex-wrap gap-3">
                         <button onclick="saveSettings()" class="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded text-sm font-medium">
                             Save All Settings
                         </button>
                         <button onclick="loadProducts()" class="bg-gray-700 hover:bg-gray-600 px-6 py-2 rounded text-sm font-medium">
                             Refresh Products
+                        </button>
+                        <button onclick="clearAnalysisCache()" class="bg-red-900/50 hover:bg-red-800 text-red-400 px-6 py-2 rounded text-sm font-medium">
+                            Clear Analysis Cache
                         </button>
                     </div>
                 </div>
@@ -1645,6 +1648,130 @@ Remember: You're a pricing expert with 15 years of experience. Use your judgment
     }
 
     // ============================================================================
+    // STORAGE MANAGEMENT (prevent localStorage quota exceeded)
+    // ============================================================================
+
+    /**
+     * Strips large data from analysis before saving to localStorage
+     * Keeps only essential fields needed for display and price application
+     */
+    function compressAnalysisForStorage(analysis) {
+        if (!analysis) return analysis;
+
+        return {
+            // Essential pricing data
+            suggestedPrice: analysis.suggestedPrice,
+            originalAiSuggestion: analysis.originalAiSuggestion,
+            confidence: analysis.confidence,
+            marketPosition: analysis.marketPosition,
+
+            // Validation state
+            wasAdjusted: analysis.wasAdjusted,
+            adjustments: analysis.adjustments,
+            warnings: analysis.warnings,
+            validation: analysis.validation,
+
+            // Status
+            applied: analysis.applied,
+            error: analysis.error,
+            analyzedAt: analysis.analyzedAt,
+
+            // Compact competitor summary (no raw results)
+            competitorAnalysis: analysis.competitorAnalysis ? {
+                low: analysis.competitorAnalysis.low,
+                median: analysis.competitorAnalysis.median,
+                high: analysis.competitorAnalysis.high,
+                retailCount: analysis.competitorAnalysis.retailCount,
+                // Only keep first 3 competitors, strip descriptions
+                kept: (analysis.competitorAnalysis.kept || []).slice(0, 3).map(c => ({
+                    source: c.source,
+                    price: c.price,
+                    productMatch: c.productMatch
+                }))
+            } : null,
+
+            // Compact product identity
+            productIdentity: analysis.productIdentity ? {
+                identifiedAs: analysis.productIdentity.identifiedAs,
+                productType: analysis.productIdentity.productType,
+                brand: analysis.productIdentity.brand,
+                confidence: analysis.productIdentity.confidence
+            } : null,
+
+            // Summary text (truncated)
+            summary: analysis.summary?.slice(0, 200),
+
+            // Price bounds
+            priceFloor: analysis.priceFloor,
+            priceCeiling: analysis.priceCeiling
+
+            // EXCLUDED to save space:
+            // - reasoning (array of strings)
+            // - searchQueries (array of search terms)
+            // - raw_search_results
+            // - competitorAnalysis.excluded
+            // - productIdentity.keyFeatures, alternateNames, searchQueries
+            // - confidenceReason (long text)
+            // - humanExpertNotes
+        };
+    }
+
+    /**
+     * Clears all analysis data from localStorage and memory
+     */
+    function clearAnalysisCache() {
+        if (!confirm('This will clear all saved analysis results. You will need to re-analyze products. Continue?')) {
+            return;
+        }
+        state.analysisCache = {};
+        localStorage.removeItem('oilslick_analysis');
+        renderProducts();
+        updateDashboard();
+        showToast('Analysis cache cleared', 'success');
+    }
+
+    /**
+     * Saves analysis cache to localStorage with compression
+     */
+    function saveAnalysisCache() {
+        try {
+            const compressed = {};
+            for (const [id, analysis] of Object.entries(state.analysisCache)) {
+                compressed[id] = compressAnalysisForStorage(analysis);
+            }
+            localStorage.setItem('oilslick_analysis', JSON.stringify(compressed));
+        } catch (e) {
+            if (e.name === 'QuotaExceededError') {
+                console.warn('localStorage quota exceeded, clearing old analyses');
+                // Clear oldest analyses if still too big
+                const entries = Object.entries(state.analysisCache);
+                const sortedByDate = entries.sort((a, b) => {
+                    const dateA = a[1].analyzedAt || '1970-01-01';
+                    const dateB = b[1].analyzedAt || '1970-01-01';
+                    return dateA.localeCompare(dateB);
+                });
+                // Keep only the newest 50%
+                const toKeep = sortedByDate.slice(Math.floor(sortedByDate.length / 2));
+                const reduced = Object.fromEntries(toKeep);
+                const compressed = {};
+                for (const [id, analysis] of Object.entries(reduced)) {
+                    compressed[id] = compressAnalysisForStorage(analysis);
+                }
+                try {
+                    localStorage.setItem('oilslick_analysis', JSON.stringify(compressed));
+                    showToast('Storage full - older analyses cleared', 'warning');
+                } catch (e2) {
+                    // Last resort: clear all
+                    localStorage.removeItem('oilslick_analysis');
+                    showToast('Storage full - analyses cleared. Results still in memory.', 'warning');
+                }
+            } else {
+                console.error('Failed to save analysis cache:', e);
+            }
+        }
+    }
+
+    // ============================================================================
     // PRODUCT TABLE RENDERING
     // ============================================================================
     function populateFilters() {
@@ -1968,7 +2095,7 @@ Remember: You're a pricing expert with 15 years of experience. Use your judgment
                 applied: false
             };
 
-            localStorage.setItem('oilslick_analysis', JSON.stringify(state.analysisCache));
+            saveAnalysisCache();
             logActivity(`Analysis complete: ${product.title} → $${analysis.suggestedPrice?.toFixed(2) || 'N/A'} (${analysis.confidence} confidence, ${analysis.competitorAnalysis?.retailCount || 0} retail competitors)`);
 
         } catch (e) {
@@ -2039,7 +2166,7 @@ Remember: You're a pricing expert with 15 years of experience. Use your judgment
             await updateProductPrice(productId, variant.id, analysis.suggestedPrice);
 
             state.analysisCache[productId].applied = true;
-            localStorage.setItem('oilslick_analysis', JSON.stringify(state.analysisCache));
+            saveAnalysisCache();
 
             showToast(`Price updated to $${analysis.suggestedPrice.toFixed(2)}`, 'success');
             renderProducts();
@@ -2420,7 +2547,7 @@ Remember: You're a pricing expert with 15 years of experience. Use your judgment
 
     function dismissSuggestion(productId) {
         delete state.analysisCache[productId];
-        localStorage.setItem('oilslick_analysis', JSON.stringify(state.analysisCache));
+        saveAnalysisCache();
         closeModal();
         renderProducts();
     }
@@ -2459,7 +2586,7 @@ Remember: You're a pricing expert with 15 years of experience. Use your judgment
                 // Update the suggestion with the edited price
                 state.analysisCache[productId].suggestedPrice = price;
                 state.analysisCache[productId].editedByUser = true;
-                localStorage.setItem('oilslick_analysis', JSON.stringify(state.analysisCache));
+                saveAnalysisCache();
 
                 // Now accept the edited suggestion
                 acceptSuggestion(productId);
