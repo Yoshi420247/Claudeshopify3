@@ -2185,6 +2185,9 @@ Remember: You're a pricing expert with 15 years of experience. Use your judgment
         document.getElementById('stop-btn').classList.add('hidden');
         hideLoadingOverlay();
 
+        // Update bulk action bar to enable Accept button if suggestions exist
+        updateBulkActionBar();
+
         if (state.stopRequested) {
             showToast('Processing stopped', 'warning');
         } else {
