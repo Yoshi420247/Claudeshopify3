@@ -115,6 +115,22 @@
                         </div>
                     </div>
 
+                    <!-- Charts Row -->
+                    <div class="grid grid-cols-2 gap-4 mb-6">
+                        <div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
+                            <h3 class="text-sm font-medium text-gray-400 mb-3">Margin Distribution</h3>
+                            <div class="h-48">
+                                <canvas id="margin-chart"></canvas>
+                            </div>
+                        </div>
+                        <div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
+                            <h3 class="text-sm font-medium text-gray-400 mb-3">Analysis Status</h3>
+                            <div class="h-48">
+                                <canvas id="status-chart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Action Cards -->
                     <div id="action-cards" class="grid grid-cols-2 gap-4 mb-6">
                         <!-- Dynamic action cards will be inserted here -->
@@ -278,28 +294,52 @@
                             <div>
                                 <label class="block text-sm text-gray-400 mb-1">Shopify Store Name</label>
                                 <div class="flex items-center gap-2">
-                                    <input type="text" id="shopify-store" value="oil-slick-pad"
-                                        class="flex-1 bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm" readonly>
+                                    <input type="text" id="shopify-store" value="oil-slick-pad" placeholder="your-store-name"
+                                        class="flex-1 bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm">
                                     <span class="text-gray-400">.myshopify.com</span>
                                 </div>
-                                <p class="text-xs text-gray-500 mt-1">Pre-filled for your store</p>
+                                <p class="text-xs text-gray-500 mt-1">Enter your Shopify store subdomain</p>
                             </div>
                             <div>
                                 <label class="block text-sm text-gray-400 mb-1">Shopify Admin API Token</label>
-                                <input type="text" id="shopify-token" placeholder="shpat_xxxxx"
-                                    class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm">
+                                <div class="relative">
+                                    <input type="password" id="shopify-token" placeholder="shpat_xxxxx"
+                                        class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm pr-10">
+                                    <button type="button" onclick="togglePasswordVisibility('shopify-token')" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                        </svg>
+                                    </button>
+                                </div>
                                 <p class="text-xs text-gray-500 mt-1">Requires read_products, write_products, read_inventory scopes</p>
                             </div>
                             <div>
                                 <label class="block text-sm text-gray-400 mb-1">OpenAI API Key</label>
-                                <input type="text" id="openai-key" placeholder="sk-xxxxx"
-                                    class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm">
+                                <div class="relative">
+                                    <input type="password" id="openai-key" placeholder="sk-xxxxx"
+                                        class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm pr-10">
+                                    <button type="button" onclick="togglePasswordVisibility('openai-key')" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                        </svg>
+                                    </button>
+                                </div>
                                 <p class="text-xs text-gray-500 mt-1">Will use GPT-4o or latest available model</p>
                             </div>
                             <div>
                                 <label class="block text-sm text-gray-400 mb-1">Brave Search API Key</label>
-                                <input type="text" id="brave-key" placeholder="BSAxxxxx"
-                                    class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm">
+                                <div class="relative">
+                                    <input type="password" id="brave-key" placeholder="BSAxxxxx"
+                                        class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm pr-10">
+                                    <button type="button" onclick="togglePasswordVisibility('brave-key')" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                        </svg>
+                                    </button>
+                                </div>
                             </div>
                             <div class="flex gap-3 pt-2">
                                 <button onclick="testConnections()" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded text-sm">
@@ -478,6 +518,20 @@
     <!-- Toast Notifications -->
     <div id="toast-container" class="fixed bottom-4 right-4 z-50 space-y-2"></div>
 
+    <!-- Global Loading Overlay -->
+    <div id="loading-overlay" class="hidden fixed inset-0 bg-gray-900/80 z-50 flex items-center justify-center">
+        <div class="bg-gray-800 border border-gray-700 rounded-lg p-6 max-w-md w-full mx-4 text-center">
+            <div class="animate-spin w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+            <p id="loading-message" class="text-lg font-medium mb-2">Loading...</p>
+            <div id="loading-progress-container" class="hidden">
+                <div class="w-full bg-gray-700 rounded-full h-2 mb-2">
+                    <div id="loading-progress-bar" class="bg-blue-500 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
+                <p id="loading-progress-text" class="text-sm text-gray-400">0 of 0 completed</p>
+            </div>
+        </div>
+    </div>
+
     <script>
     // ============================================================================
     // STATE MANAGEMENT
@@ -491,7 +545,11 @@
         processing: false,
         stopRequested: false,
         activityLog: [],
-        analysisCache: {} // productId -> analysis result
+        analysisCache: {}, // productId -> analysis result
+        charts: {
+            margin: null,
+            status: null
+        }
     };
 
     // ============================================================================
@@ -500,7 +558,8 @@
     function loadSettings() {
         const settings = JSON.parse(localStorage.getItem('oilslick_settings') || '{}');
 
-        // API Keys
+        // API Keys & Store
+        document.getElementById('shopify-store').value = settings.shopifyStore || 'oil-slick-pad';
         document.getElementById('shopify-token').value = settings.shopifyToken || '';
         document.getElementById('openai-key').value = settings.openaiKey || '';
         document.getElementById('brave-key').value = settings.braveKey || '';
@@ -559,10 +618,18 @@
     }
 
     function saveSettings() {
+        // Validate before saving
+        const validationErrors = validateSettings();
+        if (validationErrors.length > 0) {
+            validationErrors.forEach(error => showToast(error, 'warning'));
+            return;
+        }
+
         const settings = {
-            shopifyToken: document.getElementById('shopify-token').value,
-            openaiKey: document.getElementById('openai-key').value,
-            braveKey: document.getElementById('brave-key').value,
+            shopifyStore: document.getElementById('shopify-store').value.trim().toLowerCase(),
+            shopifyToken: document.getElementById('shopify-token').value.trim(),
+            openaiKey: document.getElementById('openai-key').value.trim(),
+            braveKey: document.getElementById('brave-key').value.trim(),
             minMargin: parseInt(document.getElementById('min-margin').value),
             minMarginDollars: parseFloat(document.getElementById('min-margin-dollars').value),
             clearanceMargin: parseInt(document.getElementById('clearance-margin').value),
@@ -620,6 +687,63 @@
     // ============================================================================
     const CORS_PROXY = 'https://corsproxy.io/?';
 
+    // Rate limiting configuration
+    const rateLimiter = {
+        shopify: { lastCall: 0, minInterval: 100 }, // 10 calls/sec max
+        openai: { lastCall: 0, minInterval: 200 },  // 5 calls/sec max
+        brave: { lastCall: 0, minInterval: 500 }    // 2 calls/sec max
+    };
+
+    async function rateLimitedFetch(url, options, service = 'shopify') {
+        const limiter = rateLimiter[service] || rateLimiter.shopify;
+        const now = Date.now();
+        const elapsed = now - limiter.lastCall;
+
+        if (elapsed < limiter.minInterval) {
+            await new Promise(resolve => setTimeout(resolve, limiter.minInterval - elapsed));
+        }
+
+        limiter.lastCall = Date.now();
+        return fetch(url, options);
+    }
+
+    async function fetchWithRetry(url, options, { maxRetries = 3, service = 'shopify' } = {}) {
+        let lastError;
+
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                const response = await rateLimitedFetch(url, options, service);
+
+                // Handle rate limiting (429)
+                if (response.status === 429) {
+                    const retryAfter = parseInt(response.headers.get('Retry-After') || '2');
+                    console.warn(`Rate limited on ${service}, waiting ${retryAfter}s...`);
+                    await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+                    continue;
+                }
+
+                return response;
+            } catch (error) {
+                lastError = error;
+                console.warn(`Attempt ${attempt}/${maxRetries} failed for ${service}:`, error.message);
+
+                if (attempt < maxRetries) {
+                    // Exponential backoff
+                    const delay = Math.pow(2, attempt) * 500;
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            }
+        }
+
+        throw lastError || new Error(`Failed after ${maxRetries} attempts`);
+    }
+
+    function getShopifyBaseUrl() {
+        const settings = getSettings();
+        const store = settings.shopifyStore || 'oil-slick-pad';
+        return `https://${store}.myshopify.com`;
+    }
+
     async function testConnections() {
         const resultsEl = document.getElementById('connection-results');
         resultsEl.classList.remove('hidden');
@@ -631,7 +755,7 @@
         const shopifyToken = document.getElementById('shopify-token').value;
         if (shopifyToken) {
             try {
-                const res = await fetch(`${CORS_PROXY}https://oil-slick-pad.myshopify.com/admin/api/2024-01/shop.json`, {
+                const res = await fetch(`${CORS_PROXY}${getShopifyBaseUrl()}/admin/api/2024-01/shop.json`, {
                     headers: { 'X-Shopify-Access-Token': shopifyToken }
                 });
                 if (res.ok) {
@@ -700,7 +824,8 @@
             return;
         }
 
-        showToast('Loading products...', 'info');
+        showLoadingOverlay('Loading products from Shopify...', true);
+        updateLoadingProgress(0, 1);
 
         try {
             let allProducts = [];
@@ -711,11 +836,11 @@
             // Use since_id pagination (CORS proxy strips Link headers)
             while (hasMore) {
                 pageCount++;
-                const url = `${CORS_PROXY}https://oil-slick-pad.myshopify.com/admin/api/2024-01/products.json?limit=250&since_id=${sinceId}`;
+                const url = `${CORS_PROXY}${getShopifyBaseUrl()}/admin/api/2024-01/products.json?limit=250&since_id=${sinceId}`;
 
-                const res = await fetch(url, {
+                const res = await fetchWithRetry(url, {
                     headers: { 'X-Shopify-Access-Token': settings.shopifyToken }
-                });
+                }, { service: 'shopify' });
 
                 if (!res.ok) throw new Error(`Shopify API error: ${res.status}`);
 
@@ -725,7 +850,7 @@
                     allProducts = allProducts.concat(data.products);
                     // Get the highest ID for the next page
                     sinceId = Math.max(...data.products.map(p => p.id));
-                    showToast(`Loading products... (${allProducts.length} loaded)`, 'info');
+                    updateLoadingProgress(allProducts.length, allProducts.length + 250, `Loading products... (${allProducts.length} found)`);
 
                     // If we got less than 250, we're done
                     if (data.products.length < 250) {
@@ -764,10 +889,12 @@
             }));
 
             // Try to get costs from inventory
+            updateLoadingProgress(0, state.products.length, 'Loading inventory costs...');
             await loadInventoryCosts();
 
             localStorage.setItem('oilslick_products', JSON.stringify(state.products));
 
+            hideLoadingOverlay();
             showToast(`Loaded ${state.products.length} products`, 'success');
             logActivity(`Loaded ${state.products.length} products from Shopify`);
 
@@ -776,6 +903,7 @@
             updateDashboard();
 
         } catch (e) {
+            hideLoadingOverlay();
             console.error('Load products error:', e);
             showToast('Failed to load products: ' + e.message, 'error');
         }
@@ -789,7 +917,7 @@
                 if (variant.inventoryItemId) {
                     try {
                         const res = await fetch(
-                            `${CORS_PROXY}https://oil-slick-pad.myshopify.com/admin/api/2024-01/inventory_items/${variant.inventoryItemId}.json`,
+                            `${CORS_PROXY}${getShopifyBaseUrl()}/admin/api/2024-01/inventory_items/${variant.inventoryItemId}.json`,
                             { headers: { 'X-Shopify-Access-Token': settings.shopifyToken } }
                         );
                         if (res.ok) {
@@ -809,7 +937,7 @@
 
         try {
             const res = await fetch(
-                `${CORS_PROXY}https://oil-slick-pad.myshopify.com/admin/api/2024-01/variants/${variantId}.json`,
+                `${CORS_PROXY}${getShopifyBaseUrl()}/admin/api/2024-01/variants/${variantId}.json`,
                 {
                     method: 'PUT',
                     headers: {
@@ -1418,17 +1546,25 @@ Instructions:
         const settings = getSettings();
         const concurrency = settings.concurrency || 20;
         const ids = [...state.selectedProducts];
+        let completed = 0;
 
         document.getElementById('stop-btn').classList.remove('hidden');
+        showLoadingOverlay('Analyzing products...', true);
+        updateLoadingProgress(0, ids.length);
 
         // Process in batches
         for (let i = 0; i < ids.length && !state.stopRequested; i += concurrency) {
             const batch = ids.slice(i, i + concurrency);
-            await Promise.all(batch.map(id => analyzeProduct(id)));
+            await Promise.all(batch.map(async (id) => {
+                await analyzeProduct(id);
+                completed++;
+                updateLoadingProgress(completed, ids.length, `Analyzing products... (${completed}/${ids.length})`);
+            }));
         }
 
         state.processing = false;
         document.getElementById('stop-btn').classList.add('hidden');
+        hideLoadingOverlay();
 
         if (state.stopRequested) {
             showToast('Processing stopped', 'warning');
@@ -1820,6 +1956,32 @@ Instructions:
         }
     }
 
+    function editAndAccept(productId) {
+        const product = state.products.find(p => p.id == productId);
+        const analysis = state.analysisCache[productId];
+
+        if (!product || !analysis?.suggestedPrice) return;
+
+        const currentSuggested = analysis.suggestedPrice.toFixed(2);
+        const newPrice = prompt(`Edit suggested price (current suggestion: $${currentSuggested}):`, currentSuggested);
+
+        if (newPrice !== null) {
+            const price = parseFloat(newPrice);
+            if (!isNaN(price) && price > 0) {
+                // Update the suggestion with the edited price
+                state.analysisCache[productId].suggestedPrice = price;
+                state.analysisCache[productId].editedByUser = true;
+                localStorage.setItem('oilslick_analysis', JSON.stringify(state.analysisCache));
+
+                // Now accept the edited suggestion
+                acceptSuggestion(productId);
+                closeModal();
+            } else {
+                showToast('Please enter a valid price', 'error');
+            }
+        }
+    }
+
     // ============================================================================
     // DASHBOARD
     // ============================================================================
@@ -1957,6 +2119,119 @@ Instructions:
                 </div>
             `).join('');
         }
+
+        // Update charts
+        updateCharts();
+    }
+
+    function updateCharts() {
+        if (state.products.length === 0) return;
+
+        // Margin Distribution Chart
+        const marginBuckets = { 'Negative': 0, '0-10%': 0, '10-20%': 0, '20-30%': 0, '30%+': 0, 'No Cost': 0 };
+        state.products.forEach(p => {
+            const v = p.variants[0];
+            if (!v.cost || v.cost <= 0) {
+                marginBuckets['No Cost']++;
+            } else {
+                const margin = ((v.price - v.cost) / v.price) * 100;
+                if (margin < 0) marginBuckets['Negative']++;
+                else if (margin < 10) marginBuckets['0-10%']++;
+                else if (margin < 20) marginBuckets['10-20%']++;
+                else if (margin < 30) marginBuckets['20-30%']++;
+                else marginBuckets['30%+']++;
+            }
+        });
+
+        const marginCtx = document.getElementById('margin-chart');
+        if (marginCtx) {
+            if (state.charts.margin) {
+                state.charts.margin.destroy();
+            }
+            state.charts.margin = new Chart(marginCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(marginBuckets),
+                    datasets: [{
+                        data: Object.values(marginBuckets),
+                        backgroundColor: [
+                            '#ef4444', // Negative - red
+                            '#f97316', // 0-10% - orange
+                            '#eab308', // 10-20% - yellow
+                            '#22c55e', // 20-30% - green
+                            '#10b981', // 30%+ - emerald
+                            '#6b7280'  // No Cost - gray
+                        ],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'right',
+                            labels: {
+                                color: '#9ca3af',
+                                font: { size: 11 },
+                                padding: 10
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Analysis Status Chart
+        const analyzedCount = Object.keys(state.analysisCache).filter(k =>
+            state.analysisCache[k].suggestedPrice && !state.analysisCache[k].error
+        ).length;
+        const pendingCount = Object.keys(state.analysisCache).filter(k =>
+            state.analysisCache[k].suggestedPrice && !state.analysisCache[k].applied && !state.analysisCache[k].error
+        ).length;
+        const appliedCount = Object.keys(state.analysisCache).filter(k =>
+            state.analysisCache[k].applied
+        ).length;
+        const failedCount = Object.keys(state.analysisCache).filter(k =>
+            state.analysisCache[k].error
+        ).length;
+        const notAnalyzed = state.products.length - analyzedCount - failedCount;
+
+        const statusCtx = document.getElementById('status-chart');
+        if (statusCtx) {
+            if (state.charts.status) {
+                state.charts.status.destroy();
+            }
+            state.charts.status = new Chart(statusCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['Not Analyzed', 'Pending', 'Applied', 'Failed'],
+                    datasets: [{
+                        data: [notAnalyzed, pendingCount, appliedCount, failedCount],
+                        backgroundColor: ['#6b7280', '#3b82f6', '#22c55e', '#ef4444'],
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: '#9ca3af', font: { size: 10 } }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: '#374151' },
+                            ticks: { color: '#9ca3af', font: { size: 10 } }
+                        }
+                    }
+                }
+            });
+        }
     }
 
     function applyFilter(type, value) {
@@ -2029,6 +2304,74 @@ Instructions:
             btn.classList.add('bg-gray-600');
             knob.style.left = '0.125rem';
         }
+    }
+
+    function togglePasswordVisibility(inputId) {
+        const input = document.getElementById(inputId);
+        if (input.type === 'password') {
+            input.type = 'text';
+        } else {
+            input.type = 'password';
+        }
+    }
+
+    function showLoadingOverlay(message = 'Loading...', showProgress = false) {
+        const overlay = document.getElementById('loading-overlay');
+        const messageEl = document.getElementById('loading-message');
+        const progressContainer = document.getElementById('loading-progress-container');
+
+        messageEl.textContent = message;
+        progressContainer.classList.toggle('hidden', !showProgress);
+        overlay.classList.remove('hidden');
+    }
+
+    function updateLoadingProgress(current, total, message = null) {
+        const progressBar = document.getElementById('loading-progress-bar');
+        const progressText = document.getElementById('loading-progress-text');
+        const messageEl = document.getElementById('loading-message');
+
+        const percent = total > 0 ? Math.round((current / total) * 100) : 0;
+        progressBar.style.width = `${percent}%`;
+        progressText.textContent = `${current} of ${total} completed`;
+
+        if (message) {
+            messageEl.textContent = message;
+        }
+    }
+
+    function hideLoadingOverlay() {
+        document.getElementById('loading-overlay').classList.add('hidden');
+    }
+
+    function validateSettings() {
+        const store = document.getElementById('shopify-store').value.trim();
+        const token = document.getElementById('shopify-token').value.trim();
+        const openaiKey = document.getElementById('openai-key').value.trim();
+        const braveKey = document.getElementById('brave-key').value.trim();
+
+        const errors = [];
+
+        // Validate store name
+        if (store && !/^[a-z0-9-]+$/i.test(store)) {
+            errors.push('Store name should only contain letters, numbers, and hyphens');
+        }
+
+        // Validate Shopify token format
+        if (token && !token.startsWith('shpat_')) {
+            errors.push('Shopify token should start with "shpat_"');
+        }
+
+        // Validate OpenAI key format
+        if (openaiKey && !openaiKey.startsWith('sk-')) {
+            errors.push('OpenAI API key should start with "sk-"');
+        }
+
+        // Validate Brave key format
+        if (braveKey && !braveKey.startsWith('BSA')) {
+            errors.push('Brave Search API key should start with "BSA"');
+        }
+
+        return errors;
     }
 
     function exportCSV() {
