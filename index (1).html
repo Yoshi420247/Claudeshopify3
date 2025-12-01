@@ -1143,8 +1143,8 @@ Price: $${product.variants[0]?.price?.toFixed(2) || 'Unknown'}`
             body: JSON.stringify({
                 model: 'gpt-5.1',
                 messages: messages,
-                temperature: 0.2,
                 max_completion_tokens: 500,
+                reasoning_effort: 'low', // Fast identification
                 response_format: { type: 'json_object' }
             })
         });
@@ -1313,9 +1313,8 @@ Instructions:
                     { role: 'system', content: systemPrompt },
                     { role: 'user', content: userPrompt }
                 ],
-                temperature: 0.3,
                 max_completion_tokens: 2000,
-                reasoning_effort: 'medium', // Enable adaptive reasoning for better pricing decisions
+                reasoning_effort: 'medium', // Enable deeper thinking for pricing decisions
                 response_format: { type: 'json_object' }
             })
         });
