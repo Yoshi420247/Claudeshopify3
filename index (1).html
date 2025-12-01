@@ -1087,24 +1087,45 @@
         const messages = [
             {
                 role: 'system',
-                content: `You are an expert in smoke shop products, heady glass, dab tools, and concentrate accessories.
-Your task is to identify what a product actually is, even if the title is incomplete, uses abbreviations, or jargon.
+                content: `You are a smoke shop product expert with encyclopedic knowledge of heady glass, dab tools, concentrate accessories, and smoking paraphernalia.
 
-Analyze the product information and image (if provided) to determine:
-1. What type of product this is (e.g., dab tool, carb cap, banger, rig, pipe, grinder, tray, etc.)
-2. The brand if identifiable
-3. Key identifying features (material, size, color, style)
-4. What search terms would find this EXACT product or very similar products at RETAIL smoke shops
+Your job is to identify products even when titles are cryptic, abbreviated, or use industry jargon. Think like a head shop buyer who has seen thousands of products.
+
+IDENTIFICATION PROCESS:
+1. Decode the product title (e.g., "Ti Tool 6in" = "6 inch Titanium Dab Tool")
+2. Identify the exact product category
+3. Note the brand (many products use abbreviations: OS = Oil Slick, GE = Grav Labs, etc.)
+4. List key specs: material, size, color, style, joint size if applicable
+5. Generate MULTIPLE search strategies to find this product at retail competitors
+
+SEARCH QUERY STRATEGY (generate 5+ varied queries):
+- Query 1-2: Exact product name variations
+- Query 3-4: Category + brand + key feature
+- Query 5-6: Generic category searches that would find similar products
+- Include common alternate names (e.g., "carb cap" = "directional cap" = "bubble cap")
 
 Respond in JSON:
 {
-  "productType": "specific product category",
+  "productType": "specific category (dab tool, carb cap, banger, rig, pipe, grinder, rolling tray, etc.)",
   "brand": "brand name or null",
-  "identifiedAs": "your best guess of what this product is in plain English",
-  "keyFeatures": ["feature1", "feature2"],
-  "searchQueries": ["query1", "query2", "query3"],
+  "identifiedAs": "plain English description a customer would understand",
+  "keyFeatures": ["material", "size", "color", "style", "other notable features"],
+  "alternateNames": ["other names this product might be called"],
+  "searchQueries": [
+    "exact product search query",
+    "brand + category query",
+    "category + features query",
+    "generic category search",
+    "alternate name search"
+  ],
+  "priceRangeEstimate": {
+    "low": estimated_low_price,
+    "high": estimated_high_price,
+    "typical": typical_retail_price,
+    "basis": "what this estimate is based on"
+  },
   "confidence": "high" | "medium" | "low",
-  "notes": "any relevant observations"
+  "notes": "any relevant observations about this product"
 }`
             }
         ];
@@ -1177,31 +1198,62 @@ Price: $${product.variants[0]?.price?.toFixed(2) || 'Unknown'}`
         }
     }
 
-    // Step 2: Search for competitors with multiple strategies
+    // Step 2: Search for competitors with multiple strategies (like a human pricing expert)
     async function searchCompetitors(product, productIdentity, settings) {
         if (!settings.braveKey) throw new Error('Brave API key not configured');
 
         const allResults = [];
         const seenUrls = new Set();
+        const allQueries = [];
 
-        // Generate search queries - retail focused
-        const queries = [
-            // Use AI-generated search queries
-            ...(productIdentity.searchQueries || []),
-            // Fallback queries
-            `${product.title} smoke shop`,
-            `${product.vendor || ''} ${productIdentity.productType || ''} buy online`.trim(),
-            `${productIdentity.identifiedAs || product.title} head shop`
-        ].filter(Boolean).slice(0, 4); // Limit to 4 queries
+        // ROUND 1: AI-generated exact match queries (highest priority)
+        const round1Queries = (productIdentity.searchQueries || []).slice(0, 5);
 
-        for (const query of queries) {
+        // ROUND 2: Alternate names the AI identified
+        const round2Queries = (productIdentity.alternateNames || []).map(name => `${name} smoke shop price`);
+
+        // ROUND 3: Product title variations
+        const round3Queries = [
+            `${product.title} price`,
+            `buy ${product.title} online`,
+            `${product.vendor || ''} ${product.title}`.trim()
+        ].filter(Boolean);
+
+        // ROUND 4: Category + brand (broader search)
+        const round4Queries = [
+            `${productIdentity.brand || product.vendor || ''} ${productIdentity.productType || ''} smoke shop`.trim(),
+            `${productIdentity.identifiedAs || ''} buy online`.trim(),
+            `${productIdentity.productType || ''} ${(productIdentity.keyFeatures || [])[0] || ''} retail price`.trim()
+        ].filter(q => q.length > 5);
+
+        // ROUND 5: Broadest category search (find ANY comparable products)
+        const round5Queries = [
+            `${productIdentity.productType || 'dab tool'} smoke shop price`,
+            `${productIdentity.productType || 'glass'} head shop online`,
+            `best ${productIdentity.productType || ''} 2024`.trim(),
+            `${productIdentity.productType || ''} price comparison`.trim()
+        ].filter(q => q.length > 5);
+
+        // Combine all queries, remove duplicates
+        const allSearchQueries = [...new Set([
+            ...round1Queries,
+            ...round2Queries,
+            ...round3Queries,
+            ...round4Queries,
+            ...round5Queries
+        ])].filter(Boolean).slice(0, 12); // Up to 12 queries for thorough search
+
+        console.log('Search queries:', allSearchQueries);
+
+        for (const query of allSearchQueries) {
             try {
                 // Add retail-focused terms and exclude wholesale
-                const retailQuery = `${query} -wholesale -bulk -distributor -alibaba -dhgate`;
+                const retailQuery = `${query} -wholesale -bulk -distributor -alibaba -dhgate -lot -case`;
 
-                const res = await fetch(
-                    `${CORS_PROXY}https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(retailQuery)}&count=15`,
-                    { headers: { 'X-Subscription-Token': settings.braveKey } }
+                const res = await fetchWithRetry(
+                    `${CORS_PROXY}https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(retailQuery)}&count=20`,
+                    { headers: { 'X-Subscription-Token': settings.braveKey } },
+                    { service: 'brave', maxRetries: 2 }
                 );
 
                 if (res.ok) {
@@ -1213,19 +1265,30 @@ Price: $${product.variants[0]?.price?.toFixed(2) || 'Unknown'}`
                             seenUrls.add(r.url);
                             allResults.push({
                                 ...r,
-                                searchQuery: query
+                                searchQuery: query,
+                                searchRound: allSearchQueries.indexOf(query) < 3 ? 'exact' :
+                                             allSearchQueries.indexOf(query) < 6 ? 'brand' : 'category'
                             });
                         }
                     }
                 }
+                allQueries.push(query);
             } catch (e) {
                 console.warn(`Search failed for query "${query}":`, e);
             }
         }
 
+        console.log(`Found ${allResults.length} total search results across ${allQueries.length} queries`);
+
         return {
             results: allResults,
-            queries: queries
+            queries: allQueries,
+            searchStrategy: {
+                exactQueries: round1Queries.length,
+                brandQueries: round2Queries.length,
+                categoryQueries: round3Queries.length + round4Queries.length,
+                totalResults: allResults.length
+            }
         };
     }
 
@@ -1237,51 +1300,74 @@ Price: $${product.variants[0]?.price?.toFixed(2) || 'Unknown'}`
         const cost = variant.cost || 0;
         const currentPrice = variant.price;
 
-        const systemPrompt = `You are a pricing analyst for Oil Slick Pad, an online smoke shop selling heady glass, dab tools, and concentrate accessories.
+        const systemPrompt = `You are a SENIOR PRICING EXPERT at Oil Slick Pad, an online smoke shop. You have 15+ years of experience pricing heady glass, dab tools, and smoke shop products. You think and act like a human expert, not a rigid algorithm.
 ${settings.productNiche ? `Store context: ${settings.productNiche}` : ''}
 
-CRITICAL INSTRUCTIONS:
-1. ONLY use prices from RETAIL smoke shops and head shops (online stores that sell to consumers)
-2. EXCLUDE all wholesale, distributor, B2B, bulk pricing, Alibaba, DHGate, and similar sources
-3. EXCLUDE marketplace listings (eBay, Amazon marketplace sellers, Etsy) unless from verified retailers
-4. EXCLUDE out-of-stock items or discontinued products
-5. Use FUZZY MATCHING - products don't need exact title matches. Match by:
-   - Same product type/category
-   - Same or equivalent brand
-   - Similar size/capacity/features
-   - Comparable quality tier
+YOUR MINDSET:
+You MUST find a way to price this product competitively. "No data found" is NOT acceptable - a real pricing expert always finds comparable products or uses market knowledge to make an informed decision.
 
-Known retail smoke shops to trust: ${RETAIL_SMOKE_SHOPS.slice(0, 10).join(', ')}
-Known wholesale domains to EXCLUDE: ${WHOLESALE_DOMAINS.slice(0, 10).join(', ')}
+HOW A HUMAN EXPERT THINKS:
+1. First, try to find EXACT product matches from retail competitors
+2. If no exact matches, find SIMILAR products (same category, similar features, comparable quality)
+3. If no similar products, find EQUIVALENT products (same use case, similar price tier)
+4. If search results are poor, use your MARKET KNOWLEDGE of typical pricing for this product category
+5. Consider what a CUSTOMER would compare this product to when shopping
+
+PRODUCT MATCHING FLEXIBILITY (be like a human, not a robot):
+- "Titanium dab tool" matches "Ti dabber", "titanium dabber tool", "Grade 2 Ti tool"
+- "Carb cap" matches "directional cap", "bubble cap", "spinner cap" (same function)
+- "10mm banger" matches other 10mm bangers even if brand differs
+- "Silicone container" matches "wax jar", "concentrate container", "dab container"
+- Same product type + similar size/material = VALID comparison even if brand differs
+
+SOURCES TO USE (retail smoke shops):
+${RETAIL_SMOKE_SHOPS.slice(0, 15).join(', ')}
+
+SOURCES TO EXCLUDE:
+${WHOLESALE_DOMAINS.slice(0, 10).join(', ')}, eBay sellers, Amazon marketplace, Wish, Temu
 
 Product was identified as: ${productIdentity.identifiedAs || 'Unknown'}
 Product type: ${productIdentity.productType || 'Unknown'}
 Key features: ${(productIdentity.keyFeatures || []).join(', ')}
 
-Pricing Rules:
+PRICING RULES:
 - Minimum margin: ${settings.minMargin || 20}% or $${settings.minMarginDollars || 3} (whichever is higher)
-- Clearance minimum margin: ${settings.clearanceMargin || 5}%
-- ${settings.respectMsrp ? 'Never exceed MSRP' : 'May exceed MSRP if justified'}
+- Floor price (cost-based): $${cost > 0 ? (cost * (1 + (settings.minMargin || 20) / 100)).toFixed(2) : 'Unknown'}
+- ${settings.respectMsrp ? 'Never exceed MSRP' : 'May exceed MSRP if market supports it'}
 - Max ${settings.maxAbove || 5}% above highest retail competitor
-- Max price increase: ${settings.maxIncrease || 10}%
-- Max price decrease: ${settings.maxDecrease || 15}%
-- Rounding style: ${settings.roundingStyle || 'psychological'}
+- Max price increase from current: ${settings.maxIncrease || 10}%
+- Max price decrease from current: ${settings.maxDecrease || 15}%
+- Rounding: ${settings.roundingStyle || 'psychological'} (e.g., $19.99 not $20.00)
+
+IF NO EXACT MATCHES FOUND:
+- Look at similar products in the same category and adjust for differences
+- Use your knowledge of typical smoke shop pricing tiers
+- Consider the brand reputation (premium brands command 20-40% more)
+- Factor in material quality (titanium > stainless steel > aluminum)
+- Estimate based on comparable products + quality adjustment
+
+CONFIDENCE LEVELS:
+- HIGH: Found 3+ exact or very similar retail matches
+- MEDIUM: Found 1-2 matches OR using similar/equivalent products
+- LOW: Using category estimates or limited data (but still provide a recommendation!)
 
 Respond in JSON format:
 {
   "suggestedPrice": number,
   "confidence": "high" | "medium" | "low",
-  "confidenceReason": "string explaining confidence level",
-  "summary": "1-2 sentence recommendation explanation",
-  "reasoning": ["step1", "step2", "step3"],
+  "confidenceReason": "detailed explanation of how you arrived at this price",
+  "summary": "1-2 sentence recommendation a store owner would understand",
+  "reasoning": ["step1", "step2", "step3", "step4"],
   "productMatch": {
     "identifiedAs": "what you believe this product is",
     "matchConfidence": "high" | "medium" | "low",
     "matchNotes": "notes on product identification"
   },
   "competitorAnalysis": {
-    "kept": [{"source": "domain/store name", "price": number, "productMatch": "exact|similar|equivalent", "reason": "why kept"}],
-    "excluded": [{"source": "domain", "reason": "wholesale|marketplace|out of stock|different product|etc"}],
+    "kept": [{"source": "store name", "price": number, "productMatch": "exact|similar|equivalent", "matchReason": "why this is a valid comparison"}],
+    "excluded": [{"source": "domain", "reason": "specific reason"}],
+    "usedComparables": true | false,
+    "comparableNotes": "if using similar/equivalent products, explain the comparison logic",
     "low": number | null,
     "median": number | null,
     "high": number | null,
@@ -1289,36 +1375,39 @@ Respond in JSON format:
   },
   "priceFloor": number,
   "priceCeiling": number,
-  "marketPosition": "below market" | "at market" | "above market" | "premium" | "unknown"
+  "marketPosition": "below market" | "at market" | "above market" | "premium" | "insufficient data",
+  "humanExpertNotes": "what would a human pricing expert say about this product's market position?"
 }`;
 
-        const userPrompt = `Analyze pricing for this product:
+        const userPrompt = `You are pricing this product for Oil Slick Pad. Act like a human pricing expert - find a way to price it competitively!
 
-PRODUCT INFO:
+PRODUCT TO PRICE:
 - Title: ${product.title}
-- Vendor: ${product.vendor || 'Unknown'}
-- Type: ${product.productType || 'Unknown'}
+- Vendor/Brand: ${product.vendor || 'Unknown'}
+- Category: ${product.productType || 'Unknown'}
 - Current Price: $${currentPrice.toFixed(2)}
-- Cost: ${cost > 0 ? '$' + cost.toFixed(2) : 'Unknown'}
-${variant.compareAtPrice ? `- MSRP/Compare At: $${variant.compareAtPrice.toFixed(2)}` : ''}
+- Our Cost: ${cost > 0 ? '$' + cost.toFixed(2) + ' (margin floor: $' + (cost * (1 + (settings.minMargin || 20) / 100)).toFixed(2) + ')' : 'Unknown'}
+${variant.compareAtPrice ? `- MSRP: $${variant.compareAtPrice.toFixed(2)}` : ''}
 
-AI PRODUCT IDENTIFICATION:
-- Identified as: ${productIdentity.identifiedAs || 'Unknown'}
-- Product type: ${productIdentity.productType || 'Unknown'}
-- Brand: ${productIdentity.brand || 'Unknown'}
-- Key features: ${(productIdentity.keyFeatures || []).join(', ')}
-- Identification confidence: ${productIdentity.confidence || 'Unknown'}
+AI IDENTIFIED THIS AS:
+${productIdentity.identifiedAs || product.title}
+Type: ${productIdentity.productType || 'Unknown'} | Brand: ${productIdentity.brand || product.vendor || 'Unknown'}
+Features: ${(productIdentity.keyFeatures || []).join(', ') || 'Standard'}
+AI Confidence: ${productIdentity.confidence || 'Unknown'}
 
-SEARCH RESULTS (analyze each - keep only retail, exclude wholesale):
-${competitorData.results.map((c, i) => `${i + 1}. "${c.title}" - ${c.url}${c.description ? `\n   ${c.description.slice(0, 150)}` : ''}`).join('\n\n') || 'No results found'}
+SEARCH RESULTS TO ANALYZE (${competitorData.results.length} results from ${competitorData.queries.length} searches):
+${competitorData.results.slice(0, 30).map((c, i) => `${i + 1}. [${c.searchRound || 'search'}] "${c.title}"
+   URL: ${c.url}
+   ${c.description ? c.description.slice(0, 200) : 'No description'}`).join('\n\n') || 'Limited search results - USE YOUR MARKET KNOWLEDGE'}
 
-Instructions:
-1. First, determine which search results are from legitimate RETAIL smoke/head shops
-2. Exclude ANY wholesale, distributor, bulk, or B2B sources
-3. Use fuzzy matching - find products that are the same or very similar
-4. Extract prices from the retail results (look for price patterns in titles/descriptions)
-5. Calculate competitive pricing based ONLY on retail competitors
-6. If no valid retail competitors found, recommend keeping current price with low confidence`;
+YOUR TASK:
+1. Scan ALL results for retail smoke shops selling this OR similar products
+2. Extract any prices you can find (look for $XX.XX patterns, "price:", "sale:", etc.)
+3. If exact matches are scarce, use SIMILAR products as comparables (same category, similar quality)
+4. If results are poor, estimate based on typical market pricing for ${productIdentity.productType || 'this product type'}
+5. A human expert ALWAYS provides a pricing recommendation - you must too!
+
+Remember: You're a pricing expert with 15 years of experience. Use your judgment. Find comparables. Make a recommendation.`;
 
         const res = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
