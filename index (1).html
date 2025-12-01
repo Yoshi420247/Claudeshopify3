@@ -1150,12 +1150,32 @@ Price: $${product.variants[0]?.price?.toFixed(2) || 'Unknown'}`
         });
 
         if (!res.ok) {
-            const err = await res.json();
-            throw new Error(err.error?.message || `OpenAI error: ${res.status}`);
+            const errText = await res.text();
+            console.error('OpenAI API error response:', errText);
+            try {
+                const err = JSON.parse(errText);
+                throw new Error(err.error?.message || `OpenAI error: ${res.status}`);
+            } catch (e) {
+                throw new Error(`OpenAI error: ${res.status} - ${errText.slice(0, 200)}`);
+            }
         }
 
         const data = await res.json();
-        return JSON.parse(data.choices[0].message.content);
+        console.log('OpenAI identify response:', data);
+
+        // Handle GPT-5.1 response format
+        const content = data.choices?.[0]?.message?.content;
+        if (!content) {
+            console.error('No content in response:', data);
+            throw new Error('No content in OpenAI response');
+        }
+
+        try {
+            return JSON.parse(content);
+        } catch (e) {
+            console.error('Failed to parse JSON:', content);
+            throw new Error('Invalid JSON in OpenAI response');
+        }
     }
 
     // Step 2: Search for competitors with multiple strategies
@@ -1320,12 +1340,33 @@ Instructions:
         });
 
         if (!res.ok) {
-            const err = await res.json();
-            throw new Error(err.error?.message || `OpenAI error: ${res.status}`);
+            const errText = await res.text();
+            console.error('OpenAI API error response:', errText);
+            try {
+                const err = JSON.parse(errText);
+                throw new Error(err.error?.message || `OpenAI error: ${res.status}`);
+            } catch (e) {
+                throw new Error(`OpenAI error: ${res.status} - ${errText.slice(0, 200)}`);
+            }
         }
 
         const data = await res.json();
-        const analysis = JSON.parse(data.choices[0].message.content);
+        console.log('OpenAI analysis response:', data);
+
+        // Handle GPT-5.1 response format
+        const content = data.choices?.[0]?.message?.content;
+        if (!content) {
+            console.error('No content in response:', data);
+            throw new Error('No content in OpenAI response');
+        }
+
+        let analysis;
+        try {
+            analysis = JSON.parse(content);
+        } catch (e) {
+            console.error('Failed to parse JSON:', content);
+            throw new Error('Invalid JSON in OpenAI response');
+        }
 
         return {
             ...analysis,
