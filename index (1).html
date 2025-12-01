@@ -1144,7 +1144,7 @@ Price: $${product.variants[0]?.price?.toFixed(2) || 'Unknown'}`
                 model: 'gpt-5.1',
                 messages: messages,
                 temperature: 0.2,
-                max_tokens: 500,
+                max_completion_tokens: 500,
                 response_format: { type: 'json_object' }
             })
         });
@@ -1314,7 +1314,7 @@ Instructions:
                     { role: 'user', content: userPrompt }
                 ],
                 temperature: 0.3,
-                max_tokens: 2000,
+                max_completion_tokens: 2000,
                 reasoning_effort: 'medium', // Enable adaptive reasoning for better pricing decisions
                 response_format: { type: 'json_object' }
             })
