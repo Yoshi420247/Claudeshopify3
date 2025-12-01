@@ -326,7 +326,7 @@
                                         </svg>
                                     </button>
                                 </div>
-                                <p class="text-xs text-gray-500 mt-1">Will use GPT-4o or latest available model</p>
+                                <p class="text-xs text-gray-500 mt-1">Uses GPT-5.1 with adaptive reasoning for pricing analysis</p>
                             </div>
                             <div>
                                 <label class="block text-sm text-gray-400 mb-1">Brave Search API Key</label>
@@ -1141,7 +1141,7 @@ Price: $${product.variants[0]?.price?.toFixed(2) || 'Unknown'}`
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                model: 'gpt-4o',
+                model: 'gpt-5.1',
                 messages: messages,
                 temperature: 0.2,
                 max_tokens: 500,
@@ -1308,13 +1308,14 @@ Instructions:
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                model: 'gpt-4o',
+                model: 'gpt-5.1',
                 messages: [
                     { role: 'system', content: systemPrompt },
                     { role: 'user', content: userPrompt }
                 ],
                 temperature: 0.3,
-                max_tokens: 1500,
+                max_tokens: 2000,
+                reasoning_effort: 'medium', // Enable adaptive reasoning for better pricing decisions
                 response_format: { type: 'json_object' }
             })
         });
