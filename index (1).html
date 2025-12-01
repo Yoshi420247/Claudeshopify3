@@ -160,6 +160,8 @@
                         <option value="">All Status</option>
                         <option value="Needs Analysis">Needs Analysis</option>
                         <option value="Has Suggestion">Has Suggestion</option>
+                        <option value="Needs Review">⚠ Needs Review</option>
+                        <option value="Ready">✓ Ready to Apply</option>
                         <option value="Updated">Updated</option>
                         <option value="Failed">Failed</option>
                         <option value="Negative Margin">Negative Margin</option>
@@ -1455,12 +1457,191 @@ Remember: You're a pricing expert with 15 years of experience. Use your judgment
             throw new Error('Invalid JSON in OpenAI response');
         }
 
+        // Apply post-validation to enforce pricing rules
+        const validatedAnalysis = validateAndAdjustPrice(analysis, product, settings);
+
         return {
-            ...analysis,
+            ...validatedAnalysis,
             productIdentity,
             searchQueries: competitorData.queries,
             analyzedAt: new Date().toISOString()
         };
+    }
+
+    // ============================================================================
+    // PRICE VALIDATION & POST-PROCESSING
+    // ============================================================================
+
+    /**
+     * Validates and adjusts AI-suggested prices to enforce business rules
+     * This is the safety layer that ensures AI suggestions are within acceptable bounds
+     */
+    function validateAndAdjustPrice(analysis, product, settings) {
+        const variant = product.variants[0];
+        const currentPrice = variant.price;
+        const cost = variant.cost || 0;
+        const msrp = variant.compareAtPrice || null;
+
+        let suggestedPrice = analysis.suggestedPrice;
+        const warnings = [];
+        const adjustments = [];
+
+        // Track original AI suggestion for transparency
+        const originalSuggestion = suggestedPrice;
+
+        // ===== SANITY CHECKS =====
+
+        // Check 1: Minimum price floor ($0.50)
+        const absoluteMinPrice = 0.50;
+        if (suggestedPrice < absoluteMinPrice) {
+            adjustments.push(`Price below absolute minimum ($${absoluteMinPrice})`);
+            suggestedPrice = absoluteMinPrice;
+        }
+
+        // Check 2: Maximum price ceiling (10x current price or $10000, whichever is lower)
+        const absoluteMaxPrice = Math.min(currentPrice * 10, 10000);
+        if (suggestedPrice > absoluteMaxPrice) {
+            adjustments.push(`Price exceeds safety ceiling ($${absoluteMaxPrice.toFixed(2)})`);
+            suggestedPrice = absoluteMaxPrice;
+        }
+
+        // Check 3: Negative or zero price
+        if (suggestedPrice <= 0) {
+            adjustments.push('Invalid price (zero or negative)');
+            suggestedPrice = currentPrice; // Fall back to current price
+            warnings.push('AI returned invalid price - keeping current price');
+        }
+
+        // ===== MARGIN ENFORCEMENT =====
+
+        if (cost > 0) {
+            const minMarginPct = settings.minMargin || 20;
+            const minMarginDollars = settings.minMarginDollars || 3;
+
+            // Calculate floor prices based on both margin rules
+            const floorByPercent = cost / (1 - minMarginPct / 100);
+            const floorByDollars = cost + minMarginDollars;
+            const marginFloor = Math.max(floorByPercent, floorByDollars);
+
+            if (suggestedPrice < marginFloor) {
+                adjustments.push(`Raised to meet minimum margin (floor: $${marginFloor.toFixed(2)})`);
+                suggestedPrice = marginFloor;
+            }
+        } else {
+            // No cost data - add warning
+            warnings.push('Unknown cost - margin rules not enforced. Please add cost data for accurate pricing.');
+        }
+
+        // ===== MSRP CEILING =====
+
+        if (settings.respectMsrp && msrp && suggestedPrice > msrp) {
+            adjustments.push(`Capped at MSRP ($${msrp.toFixed(2)})`);
+            suggestedPrice = msrp;
+        }
+
+        // ===== MAX INCREASE/DECREASE BOUNDS =====
+
+        const maxIncreasePct = settings.maxIncrease || 10;
+        const maxDecreasePct = settings.maxDecrease || 15;
+
+        const maxAllowedPrice = currentPrice * (1 + maxIncreasePct / 100);
+        const minAllowedPrice = currentPrice * (1 - maxDecreasePct / 100);
+
+        if (suggestedPrice > maxAllowedPrice) {
+            adjustments.push(`Capped at max ${maxIncreasePct}% increase ($${maxAllowedPrice.toFixed(2)})`);
+            suggestedPrice = maxAllowedPrice;
+        }
+
+        if (suggestedPrice < minAllowedPrice) {
+            adjustments.push(`Raised to max ${maxDecreasePct}% decrease ($${minAllowedPrice.toFixed(2)})`);
+            suggestedPrice = minAllowedPrice;
+        }
+
+        // ===== PSYCHOLOGICAL ROUNDING =====
+
+        suggestedPrice = applyPsychologicalRounding(suggestedPrice, settings.roundingStyle || 'psychological');
+
+        // ===== CONFIDENCE-BASED WARNINGS =====
+
+        if (analysis.confidence === 'low') {
+            warnings.push('Low confidence - manual review recommended before accepting');
+        }
+
+        if (analysis.competitorAnalysis?.retailCount === 0) {
+            warnings.push('No competitor prices found - based on market estimates only');
+        }
+
+        // ===== CALCULATE FINAL METRICS =====
+
+        const wasAdjusted = Math.abs(suggestedPrice - originalSuggestion) > 0.01;
+        const finalMargin = cost > 0 ? ((suggestedPrice - cost) / suggestedPrice * 100) : null;
+        const priceChange = suggestedPrice - currentPrice;
+        const priceChangePct = (priceChange / currentPrice) * 100;
+
+        return {
+            ...analysis,
+            suggestedPrice: suggestedPrice,
+            originalAiSuggestion: originalSuggestion,
+            wasAdjusted: wasAdjusted,
+            adjustments: adjustments,
+            warnings: warnings,
+            validation: {
+                passed: adjustments.length === 0,
+                adjustmentCount: adjustments.length,
+                warningCount: warnings.length,
+                finalMargin: finalMargin,
+                priceChange: priceChange,
+                priceChangePct: priceChangePct,
+                meetsMinMargin: cost > 0 ? finalMargin >= (settings.minMargin || 20) : null,
+                withinMsrp: msrp ? suggestedPrice <= msrp : true,
+                requiresReview: analysis.confidence === 'low' || warnings.length > 0
+            }
+        };
+    }
+
+    /**
+     * Applies psychological pricing (e.g., $19.99 instead of $20.00)
+     */
+    function applyPsychologicalRounding(price, style) {
+        switch (style) {
+            case 'psychological':
+                // Round to nearest .99 or .95
+                if (price < 5) {
+                    // Under $5: round to .99 (e.g., $3.99, $4.99)
+                    return Math.floor(price) + 0.99;
+                } else if (price < 20) {
+                    // $5-$20: round to .95 or .99
+                    const base = Math.floor(price);
+                    return price - base > 0.5 ? base + 0.99 : base + 0.95;
+                } else if (price < 100) {
+                    // $20-$100: round to .99
+                    return Math.round(price) - 0.01;
+                } else {
+                    // $100+: round to nearest $5 then subtract $0.01
+                    const rounded = Math.round(price / 5) * 5;
+                    return rounded - 0.01;
+                }
+
+            case 'round':
+                // Standard rounding to nearest dollar
+                return Math.round(price);
+
+            case 'up':
+                // Always round up
+                return Math.ceil(price);
+
+            case 'down':
+                // Always round down
+                return Math.floor(price);
+
+            case 'none':
+                // No rounding - keep 2 decimal places
+                return Math.round(price * 100) / 100;
+
+            default:
+                // Default to psychological
+                return Math.round(price) - 0.01;
+        }
     }
 
     // ============================================================================
@@ -1507,7 +1688,17 @@ Remember: You're a pricing expert with 15 years of experience. Use your judgment
 
                 switch (status) {
                     case 'Needs Analysis': return !analysis;
-                    case 'Has Suggestion': return analysis && !analysis.applied;
+                    case 'Has Suggestion': return analysis && analysis.suggestedPrice && !analysis.applied;
+                    case 'Needs Review':
+                        // Items with warnings, low confidence, or adjustments
+                        return analysis && analysis.suggestedPrice && !analysis.applied &&
+                            (analysis.validation?.requiresReview || analysis.confidence === 'low' ||
+                             analysis.warnings?.length > 0 || analysis.wasAdjusted);
+                    case 'Ready':
+                        // High/medium confidence with no warnings or adjustments
+                        return analysis && analysis.suggestedPrice && !analysis.applied &&
+                            analysis.confidence !== 'low' && !analysis.validation?.requiresReview &&
+                            (!analysis.warnings || analysis.warnings.length === 0);
                     case 'Updated': return analysis && analysis.applied;
                     case 'Failed': return analysis && analysis.error;
                     case 'Negative Margin': return marginPct !== null && marginPct < 0;
@@ -1595,14 +1786,30 @@ Remember: You're a pricing expert with 15 years of experience. Use your judgment
                 else marginClass = 'text-green-400';
             }
 
-            // Status badge
+            // Status badge - confidence-based coloring
             let statusBadge = '';
             if (analysis?.error) {
                 statusBadge = '<span class="px-2 py-1 text-xs rounded bg-red-900/50 text-red-400">Failed</span>';
             } else if (analysis?.applied) {
                 statusBadge = '<span class="px-2 py-1 text-xs rounded bg-green-900/50 text-green-400">Updated</span>';
             } else if (analysis?.suggestedPrice) {
-                statusBadge = '<span class="px-2 py-1 text-xs rounded bg-blue-900/50 text-blue-400">Review</span>';
+                // Confidence-based badge coloring
+                const confidence = analysis.confidence || 'medium';
+                const requiresReview = analysis.validation?.requiresReview || analysis.warnings?.length > 0;
+                const wasAdjusted = analysis.wasAdjusted;
+
+                let badgeClass, badgeText;
+                if (confidence === 'low' || requiresReview) {
+                    badgeClass = 'bg-orange-900/50 text-orange-400 border border-orange-500/50';
+                    badgeText = 'Review ⚠';
+                } else if (confidence === 'high' && !wasAdjusted) {
+                    badgeClass = 'bg-blue-900/50 text-blue-400';
+                    badgeText = 'Ready ✓';
+                } else {
+                    badgeClass = 'bg-blue-900/50 text-blue-400';
+                    badgeText = wasAdjusted ? 'Adjusted' : 'Review';
+                }
+                statusBadge = `<span class="px-2 py-1 text-xs rounded ${badgeClass}">${badgeText}</span>`;
             } else if (analysis?.analyzing) {
                 const step = analysis.step || 'Analyzing...';
                 statusBadge = `<span class="px-2 py-1 text-xs rounded bg-yellow-900/50 text-yellow-400 animate-pulse-dot">${step}</span>`;
@@ -1610,14 +1817,31 @@ Remember: You're a pricing expert with 15 years of experience. Use your judgment
                 statusBadge = '<span class="px-2 py-1 text-xs rounded bg-gray-700 text-gray-400">Analyze</span>';
             }
 
-            // Suggested price display
+            // Suggested price display with warnings
             let suggestedDisplay = '—';
             if (analysis?.suggestedPrice && !analysis.applied) {
                 const delta = analysis.suggestedPrice - variant.price;
                 const deltaPct = (delta / variant.price) * 100;
                 const sign = delta >= 0 ? '+' : '';
+
+                // Color based on confidence
+                const confidence = analysis.confidence || 'medium';
+                const priceColorClass = confidence === 'low' ? 'text-orange-400' :
+                                        confidence === 'high' ? 'text-blue-400' : 'text-blue-400';
+
+                // Show adjustment indicator
+                const adjustedIndicator = analysis.wasAdjusted ?
+                    `<span class="text-xs text-yellow-500" title="Price was adjusted to meet rules">⚡</span>` : '';
+
+                // Show warning indicator
+                const warningIndicator = (analysis.warnings?.length > 0) ?
+                    `<span class="text-xs text-orange-400 cursor-help" title="${analysis.warnings.join('\\n')}">⚠</span>` : '';
+
                 suggestedDisplay = `
-                    <span class="text-blue-400 font-medium">$${analysis.suggestedPrice.toFixed(2)}</span>
+                    <div class="flex items-center justify-end gap-1">
+                        <span class="${priceColorClass} font-medium">$${analysis.suggestedPrice.toFixed(2)}</span>
+                        ${adjustedIndicator}${warningIndicator}
+                    </div>
                     <span class="text-xs ${delta >= 0 ? 'text-green-400' : 'text-red-400'}">(${sign}$${delta.toFixed(2)} / ${sign}${deltaPct.toFixed(1)}%)</span>
                 `;
             }
@@ -2012,6 +2236,51 @@ Remember: You're a pricing expert with 15 years of experience. Use your judgment
                             </div>
                         </div>
                         <p class="text-sm text-gray-300 mb-4">${analysis.summary}</p>
+
+                        ${/* Validation Alerts */ ''}
+                        ${analysis.warnings?.length || analysis.adjustments?.length ? `
+                            <div class="mb-4 space-y-2">
+                                ${analysis.warnings?.length ? `
+                                    <div class="bg-orange-900/30 border border-orange-700/50 rounded p-2">
+                                        <div class="text-xs font-medium text-orange-400 mb-1">⚠ Warnings</div>
+                                        <ul class="text-xs text-orange-300 space-y-1">
+                                            ${analysis.warnings.map(w => `<li>• ${w}</li>`).join('')}
+                                        </ul>
+                                    </div>
+                                ` : ''}
+                                ${analysis.adjustments?.length ? `
+                                    <div class="bg-yellow-900/30 border border-yellow-700/50 rounded p-2">
+                                        <div class="text-xs font-medium text-yellow-400 mb-1">⚡ Price Adjusted</div>
+                                        <div class="text-xs text-gray-400 mb-1">
+                                            AI suggested: $${analysis.originalAiSuggestion?.toFixed(2) || '—'} → Final: $${analysis.suggestedPrice.toFixed(2)}
+                                        </div>
+                                        <ul class="text-xs text-yellow-300 space-y-1">
+                                            ${analysis.adjustments.map(a => `<li>• ${a}</li>`).join('')}
+                                        </ul>
+                                    </div>
+                                ` : ''}
+                            </div>
+                        ` : `
+                            <div class="mb-4 bg-green-900/30 border border-green-700/50 rounded p-2">
+                                <div class="text-xs text-green-400">✓ Price validated - all rules passed</div>
+                            </div>
+                        `}
+
+                        ${/* Validation Summary */ ''}
+                        ${analysis.validation ? `
+                            <div class="text-xs text-gray-500 mb-3 flex items-center gap-3">
+                                <span class="${analysis.validation.meetsMinMargin === true ? 'text-green-400' : analysis.validation.meetsMinMargin === false ? 'text-red-400' : 'text-gray-500'}">
+                                    ${analysis.validation.meetsMinMargin === true ? '✓' : analysis.validation.meetsMinMargin === false ? '✗' : '—'} Min Margin
+                                </span>
+                                <span class="${analysis.validation.withinMsrp ? 'text-green-400' : 'text-red-400'}">
+                                    ${analysis.validation.withinMsrp ? '✓' : '✗'} MSRP
+                                </span>
+                                <span class="${analysis.validation.passed ? 'text-green-400' : 'text-yellow-400'}">
+                                    ${analysis.validation.passed ? '✓ No adjustments' : `⚡ ${analysis.validation.adjustmentCount} adjustments`}
+                                </span>
+                            </div>
+                        ` : ''}
+
                         <div class="flex gap-2">
                             ${!analysis.applied ? `
                                 <button onclick="acceptSuggestion('${productId}'); closeModal();" class="px-4 py-2 bg-green-600 hover:bg-green-700 rounded text-sm">Accept</button>
